@@ -2,6 +2,8 @@ from flask import Flask, request, jsonify, send_from_directory, render_template,
 from werkzeug.utils import secure_filename
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
+import io
+from flask import send_file
 import os
 
 app = Flask(__name__)
@@ -9,10 +11,12 @@ CORS(app)  # Enable CORS for all routes
 app.config.from_object('config.Config')
 db = SQLAlchemy(app)
 
-# Wallpaper Model
+# Wallpaper Model (with BLOB field)
 class Wallpaper(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     filename = db.Column(db.String(100), nullable=False)
+    data = db.Column(db.LargeBinary, nullable=False)  # Store the file as binary data
+
 
 # Favorite Model
 class Favorite(db.Model):
@@ -46,15 +50,11 @@ def admin_dashboard():
         if file and allowed_file(file.filename):
             filename = secure_filename(file.filename)
             
-            # Ensure the upload folder exists
-            if not os.path.exists(app.config['UPLOAD_FOLDER']):
-                os.makedirs(app.config['UPLOAD_FOLDER'])
-
-            # Save the uploaded file
-            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            # Read the file data as binary
+            file_data = file.read()
             
-            # Add the wallpaper to the database
-            new_wallpaper = Wallpaper(filename=filename)
+            # Add the wallpaper to the database with the file data
+            new_wallpaper = Wallpaper(filename=filename, data=file_data)
             db.session.add(new_wallpaper)
             db.session.commit()
             
@@ -62,6 +62,7 @@ def admin_dashboard():
 
     wallpapers = Wallpaper.query.all()
     return render_template('admin_dashboard.html', wallpapers=wallpapers)
+
 
 @app.route('/admin/delete/<int:id>', methods=['POST'])
 def delete_wallpaper(id):
@@ -100,9 +101,16 @@ def get_favorites(user_id):
     return jsonify([{'id': wp.id, 'filename': wp.filename} for wp in favorite_wallpapers])
 
 # Serve wallpaper images
-@app.route('/uploads/<filename>')
-def serve_wallpaper(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+@app.route('/uploads/<int:id>')
+def serve_wallpaper(id):
+    wallpaper = Wallpaper.query.get_or_404(id)
+    return send_file(
+        io.BytesIO(wallpaper.data),
+        mimetype='application/octet-stream',
+        as_attachment=True,
+        download_name=wallpaper.filename
+    )
+
 
 # Handle wallpaper download (This saves the wallpaper to the phone when accessed via a mobile browser)
 @app.route('/api/download/<filename>', methods=['GET'])
