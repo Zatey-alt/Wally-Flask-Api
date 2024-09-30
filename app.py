@@ -6,7 +6,11 @@ import os
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
-app.config.from_object('config.Config')
+
+# Configuration for allowed file types and upload folder
+app.config['UPLOAD_FOLDER'] = 'static/uploads'
+app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif'}  # Add allowed extensions
+
 db = SQLAlchemy(app)
 
 # Wallpaper Model
@@ -28,27 +32,32 @@ with app.app_context():
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
-
 @app.route('/')
 def home():
-    return redirect(url_for('admin_dashboard')) 
-
-
+    return redirect(url_for('admin_dashboard'))
 
 # Admin Routes
-
 @app.route('/admin', methods=['GET', 'POST'])
 def admin_dashboard():
     if request.method == 'POST':
         if 'file' not in request.files:
-            return 'No file part'
+            return 'No file part', 400  # Return an error if no file is found
         file = request.files['file']
         if file and allowed_file(file.filename):
             filename = secure_filename(file.filename)
+            
+            # Ensure the upload folder exists
+            if not os.path.exists(app.config['UPLOAD_FOLDER']):
+                os.makedirs(app.config['UPLOAD_FOLDER'])
+
+            # Save the uploaded file
             file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            
+            # Add the wallpaper to the database
             new_wallpaper = Wallpaper(filename=filename)
             db.session.add(new_wallpaper)
             db.session.commit()
+            
             return redirect(url_for('admin_dashboard'))
 
     wallpapers = Wallpaper.query.all()
@@ -58,7 +67,9 @@ def admin_dashboard():
 def delete_wallpaper(id):
     wallpaper = Wallpaper.query.get(id)
     if wallpaper:
-        os.remove(os.path.join(app.config['UPLOAD_FOLDER'], wallpaper.filename))
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], wallpaper.filename)
+        if os.path.exists(file_path):
+            os.remove(file_path)
         db.session.delete(wallpaper)
         db.session.commit()
     return redirect(url_for('admin_dashboard'))
@@ -83,7 +94,7 @@ def add_favorite():
     db.session.commit()
     return jsonify({'message': 'Added to favorites'}), 200
 
-# API to get favorites for a users
+# API to get favorites for a user
 @app.route('/api/favorites/<user_id>', methods=['GET'])
 def get_favorites(user_id):
     favorites = Favorite.query.filter_by(user_id=user_id).all()
