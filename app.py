@@ -6,11 +6,7 @@ import os
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
-
-# Configuration for allowed file types and upload folder
-app.config['UPLOAD_FOLDER'] = 'static/uploads'
-app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif'}  # Add allowed extensions
-
+app.config.from_object('config.Config')
 db = SQLAlchemy(app)
 
 # Wallpaper Model
@@ -32,11 +28,15 @@ with app.app_context():
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
+
 @app.route('/')
 def home():
-    return redirect(url_for('admin_dashboard'))
+    return redirect(url_for('admin_dashboard')) 
+
+
 
 # Admin Routes
+
 @app.route('/admin', methods=['GET', 'POST'])
 def admin_dashboard():
     if request.method == 'POST':
@@ -67,9 +67,7 @@ def admin_dashboard():
 def delete_wallpaper(id):
     wallpaper = Wallpaper.query.get(id)
     if wallpaper:
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], wallpaper.filename)
-        if os.path.exists(file_path):
-            os.remove(file_path)
+        os.remove(os.path.join(app.config['UPLOAD_FOLDER'], wallpaper.filename))
         db.session.delete(wallpaper)
         db.session.commit()
     return redirect(url_for('admin_dashboard'))
@@ -94,7 +92,7 @@ def add_favorite():
     db.session.commit()
     return jsonify({'message': 'Added to favorites'}), 200
 
-# API to get favorites for a user
+# API to get favorites for a users
 @app.route('/api/favorites/<user_id>', methods=['GET'])
 def get_favorites(user_id):
     favorites = Favorite.query.filter_by(user_id=user_id).all()
@@ -113,3 +111,4 @@ def download_wallpaper(filename):
 
 if __name__ == '__main__':
     app.run(debug=True)
+
